@@ -254,12 +254,17 @@ def train_resnet_all_appliances(house_number=1, window_size=100, save_dir='model
     
     # Load data file
     file_path = f"preprocessed_datasets/ukdale/ukdale{house_number}.mat"
-    
+
     # Get available appliances
     appliances = explore_available_appliances(file_path)
     print(f"Training ResNet models for {len(appliances)} appliances in house {house_number}:")
     for idx, name in appliances.items():
         print(f"  Index {idx}: {name}")
+
+    # Pre-load all appliance data once to avoid re-reading H5 for each appliance
+    from data_loader import load_house, H5_PATH
+    print("\nPre-loading all appliance data...")
+    house_data = load_house(H5_PATH, house_number, window_size=window_size)
     
     # Save configuration
     config = {
@@ -286,14 +291,12 @@ def train_resnet_all_appliances(house_number=1, window_size=100, save_dir='model
         os.makedirs(appliance_dir, exist_ok=True)
         
         try:
-            # Load data for this appliance
-            data_dict = load_and_preprocess_ukdale(
-                file_path,
-                appliance_idx,
-                window_size=window_size,
-                target_size=1
-            )
-            
+            # Reuse pre-loaded data
+            data_dict = house_data.get(appliance_name)
+            if data_dict is None:
+                print(f"  [SKIP] '{appliance_name}' not found in pre-loaded data")
+                continue
+
             # Model parameters
             model_params = {
                 'input_size': 1,              # Input channels (power)
