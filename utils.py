@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import f1_score, precision_score, recall_score
 
-def calculate_nilm_metrics(y_true, y_pred, threshold=10):
+def calculate_nilm_metrics(y_true, y_pred, threshold=0.1):
     """
     Calculate NILM-specific metrics
     
