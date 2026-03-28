@@ -138,11 +138,19 @@ def load_house(h5_path, building, window_size=100, target_size=1, normalize=True
 
         # Slice and resample each split independently
         splits_raw = {}
+        skip = False
         for split, (start, end) in SPLIT_RANGES.items():
             m, a = slice_and_resample(mains_series, appliance_series, start, end)
-            splits_raw[split] = (m, a)
             print(f"    {split}: {len(m)} samples "
                   f"(expected 14400, {start[:10]})")
+            if len(m) == 0:
+                print(f"  [SKIP] '{appliance}' — no data for {split} split ({start[:10]})")
+                skip = True
+                break
+            splits_raw[split] = (m, a)
+
+        if skip:
+            continue
 
         # Fit scalers on training slice only to avoid data leakage
         train_mains, train_app = splits_raw['train']
