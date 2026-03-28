@@ -59,6 +59,7 @@ def train_advanced_lnn_model(data_dict, model_params, train_params, save_dir='mo
             optimizer.zero_grad()
             loss = criterion(model(inputs), targets)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             train_loss += loss.item()
             progress_bar.set_postfix({'loss': loss.item()})
@@ -90,7 +91,7 @@ def train_advanced_lnn_model(data_dict, model_params, train_params, save_dir='mo
         print(f"Epoch {epoch+1}/{epochs}  Train Loss: {avg_train_loss:.6f}  "
               f"Val Loss: {avg_val_loss:.6f}  MAE: {metrics['mae']:.4f}  F1: {metrics['f1']:.4f}")
 
-        if avg_val_loss < best_val_loss:
+        if not np.isnan(avg_val_loss) and avg_val_loss < best_val_loss:
             best_val_loss   = avg_val_loss
             counter         = 0
             best_model_path = os.path.join(save_dir, "advanced_lnn_model_best.pth")

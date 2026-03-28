@@ -176,8 +176,9 @@ class LiquidTimeLayer(nn.Module):
         
         # ODE integration (Euler method)
         # dh/dt = -h/tau + f(Wx + Uh)
+        tau = torch.nn.functional.softplus(self.tau).unsqueeze(0).clamp(min=1e-3)
         f_t = self.tanh(input_proj + rec_proj)
-        dh = (-hidden / self.tau.unsqueeze(0) + f_t) * self.dt
+        dh = (-hidden / tau + f_t) * self.dt
         
         # Update hidden state
         new_hidden = hidden + dh
@@ -273,9 +274,10 @@ class AdvancedLiquidTimeLayer(nn.Module):
         # Recurrent projection
         rec_proj = torch.matmul(hidden, self.rec_weights)
         
-        # Adaptive time constants
+        # Adaptive time constants (softplus keeps tau_base positive; clamp prevents /0)
         tau_mod = self.sigmoid(self.tau_mod(x))
-        tau = self.tau_base.unsqueeze(0) * tau_mod  # Element-wise multiplication
+        tau = torch.nn.functional.softplus(self.tau_base).unsqueeze(0) * tau_mod
+        tau = tau.clamp(min=1e-3)
         
         # Input-dependent gate
         combined = torch.cat([x, hidden], dim=1)

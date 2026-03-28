@@ -29,10 +29,12 @@ def calculate_nilm_metrics(y_true, y_pred, threshold=0.1):
     # Normalized Error in Total Energy (NETE)
     energy_true = np.sum(y_true)
     energy_pred = np.sum(y_pred)
-    if energy_true > 0:
-        nete = np.abs(energy_true - energy_pred) / energy_true
+    if np.isnan(energy_true) or np.isnan(energy_pred):
+        nete = np.nan
+    elif np.abs(energy_true) > 1e-6:
+        nete = np.abs(energy_true - energy_pred) / np.abs(energy_true)
     else:
-        nete = np.inf
+        nete = 0.0 if np.abs(energy_pred) < 1e-6 else 1.0
     
     # Binarize for classification metrics (on/off detection)
     y_true_binary = y_true > threshold
