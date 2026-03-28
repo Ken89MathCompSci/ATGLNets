@@ -9,6 +9,14 @@ import os
 TARGET_HOUSES = [1, 2, 5]
 TARGET_APPLIANCES = ['fridge', 'dishwasher', 'microwave', 'washer_dryer', 'kettle']
 
+# Fixed date-range splits (6-second intervals → 14,400 samples per day)
+RESAMPLE_FREQ = '6s'
+SPLIT_RANGES = {
+    'train': ('2014-11-09 00:00:00', '2014-11-09 23:59:54'),
+    'val':   ('2014-12-07 00:00:00', '2014-12-07 23:59:54'),
+    'test':  ('2014-08-24 00:00:00', '2014-08-24 23:59:54'),
+}
+
 # Known meter-to-appliance mapping for UKDALE houses 1, 2, 5
 # meter 1 is always the aggregate mains
 HOUSE_METER_MAP = {
@@ -59,15 +67,21 @@ def read_meter(h5_path, building, meter):
     return pd.Series(df['values_block_0'].values.astype(np.float32), index=timestamps)
 
 
-def align_and_resample(mains_series, appliance_series, resample_freq='8s'):
+def slice_and_resample(mains_series, appliance_series, start, end):
     """
-    Resample both series to a uniform frequency and align on timestamps.
+    Slice both series to [start, end], resample to RESAMPLE_FREQ, and align.
     Fills gaps with forward-fill then zero.
     """
-    mains = mains_series.resample(resample_freq).mean().ffill().fillna(0)
-    appliance = appliance_series.resample(resample_freq).mean().ffill().fillna(0)
+    # Parse timestamps as UTC to match the timezone-aware index
+    start_ts = pd.Timestamp(start, tz='UTC')
+    end_ts   = pd.Timestamp(end,   tz='UTC')
 
-    # Align on common timestamps
+    mains_slice = mains_series.loc[start_ts:end_ts]
+    app_slice   = appliance_series.loc[start_ts:end_ts]
+
+    mains = mains_slice.resample(RESAMPLE_FREQ).mean().ffill().fillna(0)
+    appliance = app_slice.resample(RESAMPLE_FREQ).mean().ffill().fillna(0)
+
     df = pd.DataFrame({'mains': mains, 'appliance': appliance}).dropna()
     return df['mains'].values.astype(np.float32), df['appliance'].values.astype(np.float32)
 
@@ -90,10 +104,10 @@ def create_sequences(mains, appliance, window_size, target_size=1):
     return np.array(X).reshape(-1, window_size, 1), np.array(y)
 
 
-def load_house(h5_path, building, window_size=100, target_size=1,
-               train_ratio=0.7, val_ratio=0.15, normalize=True):
+def load_house(h5_path, building, window_size=100, target_size=1, normalize=True):
     """
-    Load and preprocess all target appliances for one house.
+    Load and preprocess all target appliances for one house using fixed
+    date-range splits defined in SPLIT_RANGES.
 
     Returns:
         dict mapping appliance_name -> data dict with DataLoaders and metadata
@@ -122,45 +136,39 @@ def load_house(h5_path, building, window_size=100, target_size=1,
 
         print(f"  [FOUND] '{appliance}' at meter {meter}: {len(appliance_series)} samples")
 
-        # Resample and align
-        mains_data, appliance_data = align_and_resample(mains_series, appliance_series)
+        # Slice and resample each split independently
+        splits_raw = {}
+        for split, (start, end) in SPLIT_RANGES.items():
+            m, a = slice_and_resample(mains_series, appliance_series, start, end)
+            splits_raw[split] = (m, a)
+            print(f"    {split}: {len(m)} samples "
+                  f"(expected 14400, {start[:10]})")
 
-        # Fit scalers on training portion only to avoid data leakage
-        train_end_idx = int(train_ratio * len(mains_data))
+        # Fit scalers on training slice only to avoid data leakage
+        train_mains, train_app = splits_raw['train']
         if normalize:
             mains_scaler = StandardScaler()
             appliance_scaler = StandardScaler()
-            mains_scaler.fit(mains_data[:train_end_idx].reshape(-1, 1))
-            appliance_scaler.fit(appliance_data[:train_end_idx].reshape(-1, 1))
-            mains_norm = mains_scaler.transform(mains_data.reshape(-1, 1)).flatten()
-            appliance_norm = appliance_scaler.transform(appliance_data.reshape(-1, 1)).flatten()
+            mains_scaler.fit(train_mains.reshape(-1, 1))
+            appliance_scaler.fit(train_app.reshape(-1, 1))
+            def norm_m(x): return mains_scaler.transform(x.reshape(-1, 1)).flatten()
+            def norm_a(x): return appliance_scaler.transform(x.reshape(-1, 1)).flatten()
         else:
-            mains_norm = mains_data
-            appliance_norm = appliance_data
             mains_scaler = appliance_scaler = None
+            def norm_m(x): return x
+            def norm_a(x): return x
 
-        # Create sequences
-        X, y = create_sequences(mains_norm, appliance_norm, window_size, target_size)
-
-        # Sequential split (preserves temporal order)
-        n = len(X)
-        train_end = int(train_ratio * n)
-        val_end = train_end + int(val_ratio * n)
-
-        X_train, y_train = X[:train_end],        y[:train_end]
-        X_val,   y_val   = X[train_end:val_end], y[train_end:val_end]
-        X_test,  y_test  = X[val_end:],          y[val_end:]
-
-        print(f"    Train: {X_train.shape}  Val: {X_val.shape}  Test: {X_test.shape}")
-
-        train_loader = DataLoader(UKDaleDataset(X_train, y_train), batch_size=32, shuffle=True)
-        val_loader   = DataLoader(UKDaleDataset(X_val,   y_val),   batch_size=32, shuffle=False)
-        test_loader  = DataLoader(UKDaleDataset(X_test,  y_test),  batch_size=32, shuffle=False)
+        loaders = {}
+        for split, (m, a) in splits_raw.items():
+            X, y = create_sequences(norm_m(m), norm_a(a), window_size, target_size)
+            shuffle = (split == 'train')
+            loaders[split] = DataLoader(UKDaleDataset(X, y), batch_size=32, shuffle=shuffle)
+            print(f"    {split}_loader: {X.shape}")
 
         results[appliance] = {
-            'train_loader':      train_loader,
-            'val_loader':        val_loader,
-            'test_loader':       test_loader,
+            'train_loader':      loaders['train'],
+            'val_loader':        loaders['val'],
+            'test_loader':       loaders['test'],
             'mains_scaler':      mains_scaler,
             'appliance_scaler':  appliance_scaler,
             'appliance_name':    appliance,
@@ -173,8 +181,7 @@ def load_house(h5_path, building, window_size=100, target_size=1,
     return results
 
 
-def load_all_houses(h5_path, window_size=100, target_size=1,
-                    train_ratio=0.7, val_ratio=0.15, normalize=True):
+def load_all_houses(h5_path, window_size=100, target_size=1, normalize=True):
     """
     Load and preprocess houses 1, 2, and 5 for all target appliances.
 
@@ -184,8 +191,7 @@ def load_all_houses(h5_path, window_size=100, target_size=1,
     all_data = {}
     for building in TARGET_HOUSES:
         all_data[building] = load_house(
-            h5_path, building, window_size, target_size,
-            train_ratio, val_ratio, normalize
+            h5_path, building, window_size, target_size, normalize
         )
     return all_data
 
@@ -222,8 +228,7 @@ def explore_available_appliances(_file_path):
 
 
 def load_and_preprocess_ukdale(file_path, appliance_index, window_size=100,
-                                target_size=1, train_ratio=0.7, val_ratio=0.15,
-                                normalize=True):
+                                target_size=1, normalize=True, **_kwargs):
     """
     Compat wrapper: maps (file_path, appliance_index) to the new H5 loader.
     Extracts house number from file_path (e.g. 'ukdale1.mat' -> house 1).
@@ -233,8 +238,7 @@ def load_and_preprocess_ukdale(file_path, appliance_index, window_size=100,
     building = int(match.group(1)) if match else 1
 
     appliance_name = TARGET_APPLIANCES[appliance_index]
-    house_data = load_house(H5_PATH, building, window_size, target_size,
-                            train_ratio, val_ratio, normalize)
+    house_data = load_house(H5_PATH, building, window_size, target_size, normalize)
 
     if appliance_name not in house_data:
         raise ValueError(f"'{appliance_name}' not found in house {building}")
@@ -250,6 +254,9 @@ if __name__ == "__main__":
 
     # Load all houses and appliances
     all_data = load_all_houses(h5_path, window_size=100, target_size=1)
+    print(f"\nSplit ranges (6s intervals, ~14400 samples/day):")
+    for split, (start, end) in SPLIT_RANGES.items():
+        print(f"  {split}: {start}  ->  {end}")
 
     print("\n=== Summary ===")
     for house, appliances in all_data.items():

@@ -4,7 +4,8 @@
       "Bash(py data_loader.py)",
       "Bash(py -c \":*)",
       "Bash(grep -n \"load_and_preprocess\\\\|explore_available\\\\|ukdale.*\\\\.mat\\\\|from data_loader\" train_*.py)",
-      "Bash(gh repo:*)"
+      "Bash(gh repo:*)",
+      "Bash(git pull)"
     ]
   }
 }
