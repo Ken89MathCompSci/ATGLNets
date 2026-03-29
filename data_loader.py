@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
 import os
 
 # Target houses and appliances
@@ -155,8 +155,8 @@ def load_house(h5_path, building, window_size=100, target_size=1, normalize=True
         # Fit scalers on training slice only to avoid data leakage
         train_mains, train_app = splits_raw['train']
         if normalize:
-            mains_scaler = StandardScaler()
-            appliance_scaler = StandardScaler()
+            mains_scaler = MinMaxScaler()
+            appliance_scaler = MinMaxScaler()
             mains_scaler.fit(train_mains.reshape(-1, 1))
             appliance_scaler.fit(train_app.reshape(-1, 1))
             def norm_m(x): return mains_scaler.transform(x.reshape(-1, 1)).flatten()

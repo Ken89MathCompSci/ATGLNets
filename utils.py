@@ -26,32 +26,33 @@ def calculate_nilm_metrics(y_true, y_pred, threshold=0.1):
     # Root Mean Square Error (RMSE)
     rmse = np.sqrt(np.mean(np.square(y_true - y_pred)))
     
-    # Normalized Error in Total Energy (NETE)
+    # Signal Aggregate Error (SAE) / Normalized Error in Total Energy (NETE)
     energy_true = np.sum(y_true)
     energy_pred = np.sum(y_pred)
     if np.isnan(energy_true) or np.isnan(energy_pred):
-        nete = np.nan
+        sae = np.nan
     elif np.abs(energy_true) > 1e-6:
-        nete = np.abs(energy_true - energy_pred) / np.abs(energy_true)
+        sae = np.abs(energy_true - energy_pred) / np.abs(energy_true)
     else:
-        nete = 0.0 if np.abs(energy_pred) < 1e-6 else 1.0
-    
+        sae = 0.0 if np.abs(energy_pred) < 1e-6 else 1.0
+
     # Binarize for classification metrics (on/off detection)
-    y_true_binary = y_true > threshold
-    y_pred_binary = y_pred > threshold
-    
+    y_true_binary = (y_true > threshold)
+    y_pred_binary = (y_pred > threshold)
+
     # Calculate precision, recall, and F1 score
     precision = precision_score(y_true_binary, y_pred_binary, zero_division=0)
-    recall = recall_score(y_true_binary, y_pred_binary, zero_division=0)
-    f1 = f1_score(y_true_binary, y_pred_binary, zero_division=0)
-    
+    recall    = recall_score(y_true_binary, y_pred_binary, zero_division=0)
+    f1        = f1_score(y_true_binary, y_pred_binary, zero_division=0)
+
     return {
-        'mae': mae,
-        'rmse': rmse,
-        'nete': nete,
+        'mae':       mae,
+        'rmse':      rmse,
+        'sae':       sae,
+        'nete':      sae,   # backward-compat alias
         'precision': precision,
-        'recall': recall,
-        'f1': f1
+        'recall':    recall,
+        'f1':        f1,
     }
 
 def save_model(model, model_params, train_params, metrics, model_path):
