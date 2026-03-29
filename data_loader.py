@@ -12,9 +12,9 @@ TARGET_APPLIANCES = ['fridge', 'dishwasher', 'microwave', 'washer_dryer', 'kettl
 # Fixed date-range splits (6-second intervals → 14,400 samples per day)
 RESAMPLE_FREQ = '6s'
 SPLIT_RANGES = {
-    'train': ('2013-04-17 00:00:00', '2013-04-17 23:59:54'),  # House 2 spring
-    'val':   ('2013-07-08 00:00:00', '2013-07-08 23:59:54'),  # House 2 summer
-    'test':  ('2013-10-09 00:00:00', '2013-10-09 23:59:54'),  # House 2 autumn
+    'train': ('2013-04-10 00:00:00', '2013-04-23 23:59:54'),  # House 2 spring (14 days)
+    'val':   ('2013-07-08 00:00:00', '2013-07-08 23:59:54'),  # House 2 summer (1 day)
+    'test':  ('2013-10-09 00:00:00', '2013-10-09 23:59:54'),  # House 2 autumn (1 day)
 }
 
 # Known meter-to-appliance mapping for UKDALE houses 1, 2, 5
