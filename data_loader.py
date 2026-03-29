@@ -12,9 +12,9 @@ TARGET_APPLIANCES = ['fridge', 'dishwasher', 'microwave', 'washer_dryer', 'kettl
 # Fixed date-range splits (6-second intervals → 14,400 samples per day)
 RESAMPLE_FREQ = '6s'
 SPLIT_RANGES = {
-    'train': ('2014-11-09 00:00:00', '2014-11-09 23:59:54'),
-    'val':   ('2014-12-07 00:00:00', '2014-12-07 23:59:54'),
-    'test':  ('2014-08-24 00:00:00', '2014-08-24 23:59:54'),
+    'train': ('2013-04-17 00:00:00', '2013-04-17 23:59:54'),  # House 2 spring
+    'val':   ('2013-07-08 00:00:00', '2013-07-08 23:59:54'),  # House 2 summer
+    'test':  ('2013-10-09 00:00:00', '2013-10-09 23:59:54'),  # House 2 autumn
 }
 
 # Known meter-to-appliance mapping for UKDALE houses 1, 2, 5
@@ -204,6 +204,59 @@ def load_all_houses(h5_path, window_size=100, target_size=1, normalize=True):
     return all_data
 
 
+def check_coverage(h5_path):
+    """
+    Print a table showing how many resampled samples each house/appliance
+    has on each split date.  Flags entries below MIN_SAMPLES as [LOW] or [MISSING].
+    """
+    MIN_SAMPLES = 14000  # ~97 % of a full 14,400-sample day
+
+    header = f"{'House':<7} {'Appliance':<14}" + "".join(
+        f"  {split:>6}({start[:10]})" for split, (start, _) in SPLIT_RANGES.items()
+    )
+    print("\n" + "=" * len(header))
+    print("Coverage check  (6s resampling, expected 14,400 samples/day)")
+    print("=" * len(header))
+    print(header)
+    print("-" * len(header))
+
+    for building in TARGET_HOUSES:
+        meter_map = HOUSE_METER_MAP.get(building, {})
+        try:
+            mains_series = read_meter(h5_path, building, meter=1)
+        except Exception:
+            print(f"H{building}  [mains not readable]")
+            continue
+
+        for appliance in TARGET_APPLIANCES:
+            meter = meter_map.get(appliance)
+            if meter is None:
+                continue
+            try:
+                app_series = read_meter(h5_path, building, meter)
+            except KeyError:
+                continue
+
+            counts = []
+            for split, (start, end) in SPLIT_RANGES.items():
+                m, _ = slice_and_resample(mains_series, app_series, start, end)
+                counts.append(len(m))
+
+            flags = []
+            for c in counts:
+                if c == 0:
+                    flags.append(f"{'MISSING':>20}")
+                elif c < MIN_SAMPLES:
+                    flags.append(f"{c:>17}[LOW]")
+                else:
+                    flags.append(f"{c:>20}")
+
+            row = f"H{building:<6} {appliance:<14}" + "".join(flags)
+            print(row)
+
+    print("=" * len(header) + "\n")
+
+
 def explore_h5_structure(h5_path):
     """
     Print the meter structure of the UKDALE HDF5 file.
@@ -259,6 +312,9 @@ if __name__ == "__main__":
 
     # Explore structure first
     explore_h5_structure(h5_path)
+
+    # Coverage check — shows which house/appliance combos have data on the split dates
+    check_coverage(h5_path)
 
     # Load all houses and appliances
     all_data = load_all_houses(h5_path, window_size=100, target_size=1)

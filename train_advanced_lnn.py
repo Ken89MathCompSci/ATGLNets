@@ -15,7 +15,14 @@ from utils import calculate_nilm_metrics, save_model
 
 def get_threshold_for_appliance(appliance_name):
     """Physical watt threshold for on/off detection (applied after inverse-transform)."""
-    return 0.5 if appliance_name == 'washer_dryer' else 10.0
+    thresholds = {
+        'fridge':      50.0,   # runs continuously ~100-200W; 50W catches compressor cycles
+        'microwave':   50.0,   # ~1200W when on; 50W avoids false positives from noise
+        'kettle':      50.0,   # ~2000W when on
+        'washer_dryer': 0.5,   # reference uses 0.5W
+        'dishwasher':  10.0,
+    }
+    return thresholds.get(appliance_name, 10.0)
 
 
 def train_advanced_lnn_model(data_dict, model_params, train_params, save_dir='models'):
@@ -246,7 +253,7 @@ def train_advanced_lnn_model(data_dict, model_params, train_params, save_dir='mo
     return model, history, test_metrics, best_model_path
 
 
-def train_advanced_lnn_all_appliances(house_number=1, window_size=100,
+def train_advanced_lnn_all_appliances(house_number=2, window_size=100,
                                       save_dir='models/advanced_lnn'):
     """
     Train Advanced LNN on all target appliances for the specified house.
@@ -323,4 +330,4 @@ def train_advanced_lnn_all_appliances(house_number=1, window_size=100,
 
 
 if __name__ == "__main__":
-    results, save_dir = train_advanced_lnn_all_appliances(house_number=1)
+    results, save_dir = train_advanced_lnn_all_appliances(house_number=2)
